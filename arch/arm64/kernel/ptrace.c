@@ -40,7 +40,7 @@
 #include <linux/regset.h>
 #include <linux/tracehook.h>
 #include <linux/elf.h>
-#if defined(CONFIG_MILLET) && defined(CONFIG_PACKAGE_RUNTIME_INFO)
+#if defined(CONFIG_MILLET)
 #include <linux/freezer.h>
 #include <linux/millet.h>
 #endif
@@ -1672,7 +1672,7 @@ static void tracehook_report_syscall(struct pt_regs *regs,
 
 int syscall_trace_enter(struct pt_regs *regs)
 {
-#if defined(CONFIG_MILLET) && defined(CONFIG_PACKAGE_RUNTIME_INFO)
+#if defined(CONFIG_MILLET)
 	if (judge_millet_freeze_switch())
 		current->pkg.millet_freeze_flag = 1;
 #endif
@@ -1697,7 +1697,7 @@ void syscall_trace_exit(struct pt_regs *regs)
 {
 	unsigned long flags = READ_ONCE(current_thread_info()->flags);
 
-#if defined(CONFIG_MILLET) && defined(CONFIG_PACKAGE_RUNTIME_INFO)
+#if defined(CONFIG_MILLET)
 	if (judge_millet_freeze_switch())
 		current->pkg.millet_freeze_flag = 0;
 #endif
