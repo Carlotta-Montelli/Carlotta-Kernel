@@ -106,6 +106,7 @@ struct zram_stats {
 	atomic64_t huge_pages;		/* no. of huge pages */
 	atomic64_t important_pages;	/* no. of important pages */
 	atomic64_t important_compr_data_size;     /* important compressed size of pages stored */
+	atomic64_t huge_pages_since;	/* no. of huge pages since zram set up */
 	atomic64_t pages_stored;	/* no. of pages currently stored */
 	atomic_long_t max_used_pages;	/* no. of maximum pages stored */
 	atomic64_t writestall;		/* no. of write slow paths */
