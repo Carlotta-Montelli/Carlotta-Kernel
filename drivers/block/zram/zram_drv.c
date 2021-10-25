@@ -2466,7 +2466,6 @@ static void zram_reset_device(struct zram *zram)
 	free_pages_life(zram->pages_life);
 #endif
 
-	up_write(&zram->init_lock);
 	/* I/O operation under all of CPU are done so let's free */
 	zram_meta_free(zram, disksize);
 	memset(&zram->stats, 0, sizeof(zram->stats));
