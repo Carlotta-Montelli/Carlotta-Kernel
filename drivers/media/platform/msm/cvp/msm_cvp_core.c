@@ -291,7 +291,7 @@ void *msm_cvp_open(int core_id, int session_type)
 		goto err_invalid_core;
 	}
 
-	pr_info(CVP_DBG_TAG
+	pr_debug(CVP_DBG_TAG
 		"[%d, %d] %s Opening cvp instance: %pK type %d cnt %d\n",
 		"info", current->pid, current->tgid, current->comm, inst,
 		session_type, instance_count);
@@ -439,7 +439,7 @@ int msm_cvp_destroy(struct msm_cvp_inst *inst)
 	msm_cvp_debugfs_deinit_inst(inst);
 	_deinit_session_queue(inst);
 
-	pr_info(CVP_DBG_TAG "Closed cvp instance: %pK session_id = %d\n",
+	pr_debug(CVP_DBG_TAG "Closed cvp instance: %pK session_id = %d\n",
 		"info", inst, hash32_ptr(inst->session));
 	if (inst->cur_cmd_type)
 		dprintk(CVP_ERR, "deleted instance has pending cmd %d\n",
