@@ -644,9 +644,15 @@ config FORCE_FAST_CHARGE
 
 config PERF_HELPER
 	tristate "Record perflock messages"
-	default n
+	default y
 	help
 	  this module support record perf lock history and other perf messages.
+
+config MMHARDWARE_OTHER_DETECTION
+	tristate "Register xiaomi mmhardware detection module"
+	default y
+	help
+	  This adds support for mmhardware detection
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
