@@ -41,6 +41,8 @@ extern bool susfs_is_boot_completed_triggered;
 
 static DEFINE_IDA(susfs_ksu_mnt_id_ida);
 static DEFINE_IDA(susfs_ksu_mnt_group_ida);
+
+#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
@@ -148,14 +150,20 @@ static int mnt_alloc_id(struct mount *mnt)
 static void mnt_free_id(struct mount *mnt)
 {
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	/* - We should keep checking mnt->mnt.susfs_mnt_id_backup if it was set.
-	 * - Then check if mnt->mnt_id is >= DEFAULT_KSU_MNT_ID.
-	 */   
-	if (mnt->mnt.susfs_mnt_id_backup) {
+	// First we have to check if susfs_mnt_id_backup is >= DEFAULT_KSU_MNT_ID,
+	// if so, no need to free.
+	if (unlikely(mnt->mnt.susfs_mnt_id_backup >= DEFAULT_KSU_MNT_ID)) {
+		return;
+	}
+
+	// Second if susfs_mnt_id_backup was set after mnt_id reorder, free it if so.
+	if (likely(mnt->mnt.susfs_mnt_id_backup)) {
 		ida_free(&mnt_id_ida, mnt->mnt.susfs_mnt_id_backup);
 		return;
 	}
-	if (mnt->mnt_id >= DEFAULT_KSU_MNT_ID) {
+
+	// Lastly check if ksu mounts are umounted globally
+	if (unlikely(mnt->mnt_id >= DEFAULT_KSU_MNT_ID)) {
 		ida_free(&susfs_ksu_mnt_id_ida, mnt->mnt_id);
 		return;
 	}
@@ -1096,6 +1104,7 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
 	if (susfs_is_boot_completed_triggered) {
 		goto orig_flow;
 	}
+	// We only check for ksu process
 	if (susfs_is_current_ksu_domain()) {
 		mnt = susfs_alloc_sus_vfsmnt(fc->source ?: "none");
 		goto bypass_orig_flow;
@@ -1199,11 +1208,60 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 	int err;
 
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	char *src_path = NULL, *path_ptr = NULL;
 	// We won't check it anymore if boot-completed stage is triggered.
 	if (susfs_is_boot_completed_triggered) {
 		goto orig_flow;
 	}
-	if (old->mnt_id >= DEFAULT_KSU_MNT_ID || old->mnt_parent->mnt_id >= DEFAULT_KSU_MNT_ID) {
+	// First we must check for ksu process because of magic mount
+	if (susfs_is_current_ksu_domain()) {
+		// if it is unsharing, we reuse the old->mnt_id
+		if (flag & CL_COPY_MNT_NS) {
+			mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+			ida_free(&susfs_ksu_mnt_id_ida, mnt->mnt_id);
+			mnt->mnt_id = old->mnt_id;
+			mnt->mnt.susfs_mnt_id_backup = DEFAULT_KSU_MNT_ID;
+			goto bypass_orig_flow;
+		}
+		// else we just go assign fake mnt_id
+		mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+		goto bypass_orig_flow;
+	}
+	// Second we check for zygote process, same due to magic mount
+	if (susfs_is_current_zygote_domain()) {
+		// We quickly check if the mount dev name is KSU first, go assign fake mnt_id if so
+		if (!strcmp(old->mnt_devname, "KSU")) {
+			mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+			goto bypass_orig_flow;
+		}
+		// Next we need to retrieve the source mount path
+		src_path = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (!src_path) {
+			goto orig_flow;
+		}
+		path_ptr = dentry_path_raw(old->mnt.mnt_root, src_path, PATH_MAX);
+		if (IS_ERR(path_ptr)) {
+			kfree(src_path);
+			goto orig_flow;
+		}
+		// If old mount has shared peer group 1 and source mountpoint is not "/", go assign fake mnt_id
+		if (old->mnt_group_id == 1 && strcmp(path_ptr, "/")) {
+			mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+			kfree(src_path);
+			goto bypass_orig_flow;
+		}
+		// If source mount path begins with "/adb/", go assign fake mnt_id
+		if (!strncmp(path_ptr, "/adb/", 5)) {
+			mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+			kfree(src_path);
+			goto bypass_orig_flow;
+		}
+		kfree(src_path);
+		goto orig_flow;
+	}
+
+	// Lastly for other processes of which old->mnt_id is >= DEFAULT_KSU_MNT_ID, go assign fake mnt_id
+	if (old->mnt_id >= DEFAULT_KSU_MNT_ID) {
 		mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
 		goto bypass_orig_flow;
 	}
@@ -3289,6 +3347,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
 		copy_flags |= CL_SHARED_TO_SLAVE | CL_UNPRIVILEGED;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	copy_flags |= CL_COPY_MNT_NS;
+#endif
 	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
 	if (IS_ERR(new)) {
 		namespace_unlock();
